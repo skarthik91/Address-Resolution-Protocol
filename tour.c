@@ -1,24 +1,41 @@
 #include "hw_addrs.h"
 
 #define IP_PROTOCOL 1385
+#define MULTICAST_IP "239.255.255.180"
+#define PORT 13854
 
+//globals
+int pg,rt,udpsend_socket,pf_socket,udprecv_socket;
 
-struct IP_Payload *ptrippayload_send,*ptrippayload_rcv;
-
-
+int make_payload(char list[100][16],int arg_num)
+{
+	int i;
+	int ptr_val=0;
+	
+	char* payload_buffer = (char*)malloc(MAXLINE);
+	   
+	memset(payload_buffer,0,sizeof(payload_buffer));
+	
+	for(i=0;i<arg_num;i++)
+	{
+	
+	strcpy(payload_buffer+ptr_val, list[i]);
+	ptr_val = strlen(list[i]) + ptr_val;
+	}
+	printf(" \n Buffer is %s \n ", payload_buffer);
+	return 0;
+}
 
 int main(int argc, char const *argv[])
 {
 	
 	char sourcevm[5];
-	int i,pg,rt,udpsend_socket,pf_socket,udprecv_socket;
+	int i,j;
 	const int on = 1;
-	char list[argc][MAXLINE];
-	struct hostent *he;
-	char **ip;
+	char listTour[argc][INET_ADDRSTRLEN];
+	struct hostent *he,*he1;
 	
-	
-	
+
 	
 	if(argc < 1)
     {
@@ -77,35 +94,54 @@ int main(int argc, char const *argv[])
 	
 	
 	gethostname(sourcevm, sizeof sourcevm);
-	
+	printf("Source vm : %s \n",sourcevm);
 	//Checking for first node, which cannot be source node
 	if(strcmp(argv[1],sourcevm) == 0){
 		printf("Cannot Start with Source vm. Enter different node \n");
+		exit(1);
 	}
 	
 	//Checking for Consecutive nodes.consecutive nodes cannot be same
 	for(i=1;i<argc;i++){
 		if(strcmp(argv[i],argv[i-1]) == 0){
 			printf("Consecutive Nodes cannot be same. Enter different node \n");
+			exit(1);
 		}
 	}
 	
+	//creating IP payload 
 	
-	/* he = gethostbyname(sourcevm);
+	//creating list
+	he = gethostbyname(sourcevm);
 	if (he == NULL) { 
 		herror("gethostbyname");
 		exit(1);
 	}
-				
 	
-	
-	listtour[0] =  */
-	
-	
-	//creating IP payload 
-	/* for(i=0;i<argc;i++){
+
+	inet_ntop(he->h_addrtype,he->h_addr_list[0],listTour[0],INET_ADDRSTRLEN);
+	printf("IP0 : %s \n",listTour[0]);			  
+
+	for(j=1;j<argc;j++)
+	{
+		printf("%s \n",argv[j]);
+		he1 = gethostbyname(argv[j]);
 		
-	} */
+ 		if (he1 == NULL) { 
+			herror("gethostbyname");
+			exit(1);
+		}
+
+		inet_ntop(he1->h_addrtype,he1->h_addr_list[0],listTour[j],INET_ADDRSTRLEN);
+		printf("IP%d : %s \n",j,listTour[j]);
+	}
 	
+	strcpy(listTour[argc],MULTICAST_IP);
+	sprintf(listTour[argc+1], "%d", PORT); 
 	
+   
+
+
+	
+	make_payload(listTour,argc+2);
 }
