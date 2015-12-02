@@ -1,7 +1,7 @@
 #include "hw_addrs.h"
 
 #define IP_PROTOCOL 10
-#define MULTICAST_IP "239.255.255.186"
+#define MULTICAST_IP "239.255.255.19"
 #define MPORT 13854
 #define IDENTIFICATION 2779
 
@@ -62,12 +62,14 @@ int make_packet(int argc, char const *argv[])
 	multicastIP.sin_addr.s_addr = inet_addr(MULTICAST_IP);
 	
 	// return the IP
-	printf("MultiCast IP %s\n", inet_ntoa(multicastIP.sin_addr)); 
+	printf("MultiCast IP returned %s\n", inet_ntoa(multicastIP.sin_addr));
+    memcpy(&listTour[argc],(char *)&multicastIP.sin_addr.s_addr,4);
+    //snprintf(listTour[argc], 4, "%d", multicastIP.sin_addr.s_addr);
 	
+	//sprintf(listTour[argc],"%d",multicastIP.sin_addr.s_addr);
+	printf("!!!!!!!!IP: %s \n",inet_ntop(he1->h_addrtype,listTour[argc],temp,INET_ADDRSTRLEN));
 	
-	sprintf(listTour[argc],"%d",multicastIP.sin_addr.ss_addr); 
-	
-	printf("MultiCast in network byte %d\n", multicastIP.sin_addr); 
+	printf("MultiCast in network byte %s\n", listTour[argc]); 
 	
 	sprintf(listTour[argc+1], "%d",htons(MPORT)); 
 	printf("port: %d \n",ntohs(atoi(listTour[argc+1])));
@@ -340,33 +342,32 @@ int main(int argc, char const *argv[])
 					if(count == 1)
 					{
 						printf("%s node is visited for the first time \n",currentnode);
-						/* 
+						 
 						char multicast[16];
 						int multicastip;
 						char temp[MAXLINE];
 						struct sockaddr_in sasend, sarecv;
-						socklen_t salen; */
+						socklen_t salen;
 						
 						
-						/* memcpy(&multicast,&rt_recv_payload[recvlen-6],4);
-						printf("multicast: %s \n",multicast);
-						multicastip = atoi(multicast);
-						printf("Received Multicast in network byte order : %d \n",multicastip);
+						memcpy(&multicast,&rt_recv_payload[recvlen-6],4);
 						
-						printf("Received Multicast IP : %s \n",inet_ntop(he->h_addrtype,multicast,temp,INET_ADDRSTRLEN));
+						
+						printf("Received Multicast IP : %s \n",inet_ntop(AF_INET,multicast,temp,INET_ADDRSTRLEN));
+                        
 						
 						//joining multicast group
 						bzero(&sasend,sizeof(sasend));
 						sasend.sin_family = AF_INET;
 						sasend.sin_port = htons(MPORT);
-						sasend.sin_addr.s_addr = multicastip;
+						sasend.sin_addr.s_addr = inet_addr(temp);
 						salen = sizeof(struct sockaddr);
 						
-						printf("sasend addr : %d \n",sasend.sin_addr.s_addr);
+						//printf("sasend addr : %d \n",sasend.sin_addr.s_addr);
 						memcpy(&sarecv, &sasend, salen);
 						Bind(udprecv_socket, (struct sockaddr*)&sarecv, salen);
 
-						Mcast_join(udprecv_socket, (struct sockaddr*)&sasend, salen, NULL, 0); */ 
+						Mcast_join(udprecv_socket, (struct sockaddr*)&sasend, salen, NULL, 0);
 						
 						
 					}
