@@ -31,6 +31,14 @@ struct hwa_info {
   struct  hwa_info  *hwa_next;	/* next of these structures */
 };
 
+struct hwaddr{
+    int sll_ifindex;  /*Interface number*/
+    unsigned short sll_hatype; /*Hardware type*/
+    unsigned char sll_halen; /*Length of address*/
+    unsigned char sll_addr[8]; /*Physical LAyer address*/
+    
+    
+};
 
 
 /* function prototypes */

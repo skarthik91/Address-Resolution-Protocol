@@ -25,13 +25,24 @@
 #define PROTOCOL 562357
 #define SOURCEPORT 13855
 #define SERVERPORT 13854
-#define ARP_PATH "/tmp/alonso"
+#define ARP_PATH "alonso"
 
 /*Global Declarations*/
 char ip_canonical[INET_ADDRSTRLEN];
 unsigned char mac_address[IF_HADDR];
 int if_index;
 
+struct arp_cache{
+    int sll_ifindex;
+    int socketfd;
+    unsigned short sll_hatype;
+    unsigned char sll_addr[8];
+    unsigned char IP[INET_ADDRSTRLEN];
+    int valid;
+    
+    
+    
+}arpcache[50];
 
 int ip_hwaddr()
 {
@@ -90,16 +101,61 @@ int ip_hwaddr()
     return 0;
 }
 
+int check_cache(char resolve_ip[INET_ADDRSTRLEN])
+{
+    int i;
+    for(i=0;i<40;i++)
+    {
+        if(strcmp(arpcache[i].IP,resolve_ip)==0)
+        {
+         if(arpcache[i].valid==1)
+         {
+             printf("\n IP address %s is present in AREP cache at entry %d",arpcache[i].IP,i);
+             return 1;
+         }
+        }
+    }
+    
+    return 0;
+    
+    
+}
+
+
+
+
+ int check_unixpacket(struct sockaddr_un recvip,char resolve_ip[INET_ADDRSTRLEN],int unixdomain_socket)
+{
+  if(check_cache(resolve_ip)==1)
+  {
+      printf("\n Cache Entry found \n");
+      
+  }
+   
+  else if (check_cache(resolve_ip)==0)
+  {
+      printf("\n Cache Entry not found \n");
+  }
+    
+    
+    
+    
+    
+    
+}
+
 int main(int argc, char *argv[])
 {
-    struct sockaddr_un arpaddr;
+    struct sockaddr_un arpaddr,recvip;
     int unixdomain_socket;
     fd_set rset;
-    int packet_socket;
-    int maxfdp,nready;
+    int packet_socket,acceptfd;
+    int maxfdp,nready,nbytes;
+    char resolve_ip[INET_ADDRSTRLEN];
     //creating pf_packet socket - packet interface on device level.
     packet_socket = socket(PF_PACKET, SOCK_RAW, htons(PROTOCOL));
     
+    socklen_t rcvlen = sizeof(recvip);
     ip_hwaddr();
     if (packet_socket == -1)
     {
@@ -124,6 +180,7 @@ int main(int argc, char *argv[])
         printf("Unix Domain Socket bind error \n");
     }
     
+    listen(unixdomain_socket,50);
     //check on which socket request is coming through select
     while(1)
     {
@@ -141,8 +198,16 @@ int main(int argc, char *argv[])
         //if request is received on unix domain socket
         if (FD_ISSET(unixdomain_socket, &rset))
         {
-         
+            acceptfd = accept(unixdomain_socket,(struct sockaddr *)&recvip, &rcvlen);
+
+         if(nbytes = read(acceptfd, resolve_ip, INET_ADDRSTRLEN)<=0)
+             printf("\n Error in reading IP address %d \n",nbytes);
+            printf("\n IP address to be resolved is %s \n ",resolve_ip);
+        
+            check_unixpacket(recvip,resolve_ip,unixdomain_socket);
             
+            
+            exit(1);
             
         }
             

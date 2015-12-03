@@ -1,14 +1,16 @@
 #include "hw_addrs.h"
 
 #define IP_PROTOCOL 10
-#define MULTICAST_IP "220.255.255.19"
+#define MULTICAST_IP "225.255.255.19"
 #define MPORT 13854
 #define IDENTIFICATION 2779
+#define ARP_PATH "alonso"
 
 //globals
 int pg,rt,udpsend_socket,pf_socket,udprecv_socket;
 char sourcevm[5];
 int len;
+int datalen = 56;
 
 
 char* make_packet(int argc, char const *argv[])
@@ -165,6 +167,79 @@ int send_packet(char sourcevm[MAXLINE],char dest[MAXLINE],char packet[MAXLINE])
 	return 0;
 }
 
+
+int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
+{
+    int unixdomain_socket;
+    struct sockaddr_un arp_address;
+    int nbytes_send,nbytes_rcv;
+    char IPaddress[INET_ADDRSTRLEN];
+    struct sockaddr_in *IP_in_addr;
+    char eth_buf[MAXLINE];
+    
+    IP_in_addr = (struct sockaddr_in *)IPaddr;
+    printf("\n The IP address to be resolved in AREQ is %s \n",inet_ntop(AF_INET, &IP_in_addr->sin_addr, IPaddress, INET_ADDRSTRLEN));
+    
+    
+    unixdomain_socket= socket(AF_LOCAL, SOCK_STREAM, 0);
+    
+    if(unixdomain_socket < 0)
+    {
+        printf("\n Error in creation of Unix socket in areq \n ");
+    }
+    
+    //unlink(ARP_PATH);
+    bzero(&arp_address, sizeof(arp_address));
+    arp_address.sun_family = AF_LOCAL;
+    strcpy(arp_address.sun_path, ARP_PATH);
+    
+    
+    
+    if (connect(unixdomain_socket, (struct sockaddr*)&arp_address, sizeof(arp_address)) < 0)
+    {
+        printf("\n Error in connecting to unix socket in areq \n");
+    }
+    
+    
+    if(nbytes_send = write(unixdomain_socket, IPaddress, INET_ADDRSTRLEN)<0)
+    {
+        
+        printf(" Error in writing to the connection socket \n");
+        
+    }
+
+    if (nbytes_rcv = read(unixdomain_socket, eth_buf, sizeof(eth_buf))<0);
+    {
+        printf("Read Error on the connection socket \n");
+    }
+    
+    return 0;
+    
+}
+
+int echo_request(struct hwaddr *HWaddr)
+{
+
+	/* int     len;
+    struct icmp *icmp;
+
+    icmp = (struct icmp *) sendbuf;
+    icmp->icmp_type = ICMP_ECHO;
+    icmp->icmp_code = 0;
+    icmp->icmp_id = pid;
+    icmp->icmp-seq = nsent++;
+    memset (icmp->icmp_data, 0xa5, datalen); /* fill with pattern */
+    //Gettimeofday ((struct timeval *) icmp->icmp_data, NULL);
+
+    //len = 8 + datalen;           /* checksum ICMP header and data */
+    //icmp->icmp_cksum = 0;
+    //icmp->icmp_cksum = in_cksum ((u_short *) icmp, len);
+
+    //Sendto (sockfd, sendbuf, len, 0, pr->sasend, pr->salen); */
+
+}
+
+
 int main(int argc, char const *argv[])
 {
 	
@@ -175,7 +250,7 @@ int main(int argc, char const *argv[])
 	char dest[MAXLINE],currentnode[MAXLINE];
 	int maxfdp,nready,fdp,rt_data;
     fd_set rset;
-	char rtbuffer[MAXLINE];
+	char rtbuffer[MAXLINE],tempip[MAXLINE];
     struct sockaddr_in rtaddr;
 	char    time_buff[MAXLINE];
     time_t ticks;
@@ -183,6 +258,12 @@ int main(int argc, char const *argv[])
 	int count = 0;
 	int recvlen,ptr;
 	char* packet1;
+    char* next_ptr;
+    char str[INET_ADDRSTRLEN],nextip[INET_ADDRSTRLEN],previousip[INET_ADDRSTRLEN];
+    struct hostent *he1;
+    struct in_addr nexthopaddr;
+    struct sockaddr_in previoushopaddr;
+    struct hwaddr HWaddr;
 	
 	if(argc < 1)
     {
@@ -317,11 +398,9 @@ int main(int argc, char const *argv[])
 			if(ntohs(rt_recv_hdr->id) == IDENTIFICATION)
 			{
 			
-					char* next_ptr;
-					char str[INET_ADDRSTRLEN],nextip[INET_ADDRSTRLEN];
-					struct hostent *he1;
-					struct in_addr nexthopaddr;
 					
+                
+					socklen_t socklen = sizeof(struct sockaddr_in);
 					he = gethostbyaddr(&(rt_recv_hdr->saddr),sizeof(rt_recv_hdr->saddr),AF_INET);
 					//printf("Source Host name: %s\n", he->h_name);
 					
@@ -378,8 +457,20 @@ int main(int argc, char const *argv[])
 							
 							printf("Last Node \n\n");
 							printf("*********************************************************\n\n");
-							exit(1);
-							//echo_request();
+							
+							
+							printf("Previous node IP %s \n",inet_ntop(AF_INET,he->h_addr_list[0],previousip,INET_ADDRSTRLEN));
+							inet_pton(AF_INET,previousip, &(previoushopaddr.sin_addr));
+							printf("Previous node IP temp %s \n",inet_ntop(AF_INET,&(previoushopaddr.sin_addr),tempip,INET_ADDRSTRLEN));
+						
+
+						
+							areq((struct sockaddr *)&previoushopaddr,socklen,&HWaddr);
+							
+							
+							printf("PING %s (%s): %d data bytes\n", previousip, previousip, datalen);
+                            exit(1);
+							//echo_request(&HWaddr);
 						
 						}
 						
@@ -394,7 +485,20 @@ int main(int argc, char const *argv[])
 						he1 = gethostbyaddr(&nexthopaddr, sizeof nexthopaddr, AF_INET);
 
 						send_packet(currentnode,he1->h_name,rtbuffer);
-						//echo_request();
+						
+						//calling areq routine to get hardware address of previous node
+						
+						
+						
+						printf("Previous node IP %s \n",inet_ntop(AF_INET,he->h_addr_list[0],previousip,INET_ADDRSTRLEN));
+						inet_pton(AF_INET,previousip, &(previoushopaddr.sin_addr));
+						printf("Previous node IP temp %s \n",inet_ntop(AF_INET,&(previoushopaddr.sin_addr),tempip,INET_ADDRSTRLEN));
+						areq((struct sockaddr *)&previoushopaddr,socklen,&HWaddr);
+						
+						printf("PING %s (%s): %d data bytes\n", previousip, previousip, datalen);
+                exit(1);
+						
+						//echo_request(&HWaddr);
 			}
 			else
 			{
