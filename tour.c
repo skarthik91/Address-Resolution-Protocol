@@ -4,7 +4,7 @@
 #define MULTICAST_IP "225.255.255.19"
 #define MPORT 13854
 #define IDENTIFICATION 2779
-#define ARP_PATH "alonso"
+#define ARP_PATH "kimi"
 
 //globals
 int pg,rt,udpsend_socket,pf_socket,udprecv_socket;

@@ -5,21 +5,27 @@
 #include <time.h>
 #include <sys/socket.h>
 #include <linux/if_ether.h>
-//#include <linux/if_arp.h>
 #include <linux/if_packet.h>
 #include <net/ethernet.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/ip.h>
-#include <sys/socket.h>
 #include <setjmp.h>
 #include <sys/un.h>
 #include <errno.h>
 #include <netinet/in_systm.h>
-
+#include <stdlib.h>
+#include <unistd.h>           // close()
+#include <netdb.h>            // struct addrinfo
+#include <sys/types.h>        // needed for socket(), uint8_t, uint16_t
+#include <sys/socket.h>       // needed for socket()
+#include <netinet/in.h>       // IPPROTO_RAW, INET_ADDRSTRLEN
+#include <arpa/inet.h>        // inet_pton() and inet_ntop()
+#include <sys/ioctl.h>        // macro ioctl is defined
+#include <bits/ioctls.h>      // defines values for argument "request" of ioctl.
+#include <net/if.h>           // struct ifreq
 
 #define	IF_NAME		16	/* same as IFNAMSIZ    in <net/if.h> */
 #define	IF_HADDR	 6	/* same as IFHWADDRLEN in <net/if.h> */
-
 #define	IP_ALIAS  	 1	/* hwa_addr is an alias */
 
 struct hwa_info {
