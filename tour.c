@@ -176,6 +176,8 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     char IPaddress[INET_ADDRSTRLEN];
     struct sockaddr_in *IP_in_addr;
     char eth_buf[MAXLINE];
+    char* ptr;
+    int i;
     
     IP_in_addr = (struct sockaddr_in *)IPaddr;
     printf("\n The IP address to be resolved in AREQ is %s \n",inet_ntop(AF_INET, &IP_in_addr->sin_addr, IPaddress, INET_ADDRSTRLEN));
@@ -208,10 +210,25 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
         
     }
 
-    if (nbytes_rcv = read(unixdomain_socket, eth_buf, sizeof(eth_buf))<0);
+    if (nbytes_rcv = read(unixdomain_socket, eth_buf, 6)<0);
     {
         printf("Read Error on the connection socket \n");
     }
+    
+    printf(" %d bytes received from socket \n",nbytes_rcv);
+    
+    
+        printf("           MAC Address = ");
+    ptr = eth_buf;
+    i = 6;
+        //int j=0;
+        do {
+            
+            printf("%.2x%s", *ptr++ & 0xff, (i == 1) ? " " : ":");
+            
+        } while (--i > 0);
+    
+
     
     return 0;
     
