@@ -1,16 +1,29 @@
 #include "hw_addrs.h"
 
-#define IP_PROTOCOL 10
-#define MULTICAST_IP "225.255.255.19"
+
+#define IP_PROTOCOL 105
+#define MULTICAST_IP "220.255.255.19"
 #define MPORT 13854
-#define IDENTIFICATION 2779
+#define IDENTIFICATION 212
+#define ETH_HDRLEN 14  // Ethernet header length
+#define IP4_HDRLEN 20  // IPv4 header length
+#define ICMP_HDRLEN 8  // ICMP header length for echo request, excludes data
+#define DATALEN 56
+#define ETH_PAYLOAD_LEN IP4_HDRLEN + ICMP_HDRLEN + DATALEN
+#define ETH_PACKET_LEN ETH_HDRLEN + ETH_PAYLOAD_LEN
 #define ARP_PATH "kimi"
+
 
 //globals
 int pg,rt,udpsend_socket,pf_socket,udprecv_socket;
 char sourcevm[5];
 int len;
-int datalen = 56;
+pid_t   pid; 
+char previousnode[MAXLINE];
+char currentnode[MAXLINE];
+char rtbuffer[MAXLINE];
+char nextnode[MAXLINE];
+struct hwaddr HWaddr;
 
 
 char* make_packet(int argc, char const *argv[])
@@ -155,7 +168,7 @@ int send_packet(char sourcevm[MAXLINE],char dest[MAXLINE],char packet[MAXLINE])
 	destinationaddr.sin_addr.s_addr = iph->daddr;
 
 	
-	printf("Sending packet on route traversal socket to next node in tour %s\n\n",dest);
+	printf("Sending packet on route traversal socket to next node in tour %s\n\n", dest);
 
 	sendbytes = sendto(rt,packet,sizeof(struct iphdr) + payload_buffer[0],0,(struct sockaddr*)&destinationaddr,sizeof(struct sockaddr));
 	if(sendbytes < 0)
@@ -178,9 +191,12 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     char eth_buf[MAXLINE];
     char* ptr;
     int i;
-    
+    int j;
+	
     IP_in_addr = (struct sockaddr_in *)IPaddr;
-    printf("\n The IP address to be resolved in AREQ is %s \n",inet_ntop(AF_INET, &IP_in_addr->sin_addr, IPaddress, INET_ADDRSTRLEN));
+	
+	inet_ntop(AF_INET, &IP_in_addr->sin_addr, IPaddress, INET_ADDRSTRLEN);
+   // printf("\n The IP address to be resolved in AREQ is %s \n",inet_ntop(AF_INET, &IP_in_addr->sin_addr, IPaddress, INET_ADDRSTRLEN));
     
     
     unixdomain_socket= socket(AF_LOCAL, SOCK_STREAM, 0);
@@ -212,49 +228,300 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 
     if (nbytes_rcv = read(unixdomain_socket, eth_buf, 6)<0);
     {
-        printf("Read Error on the connection socket \n");
+        //printf("Read Error on the connection socket \n");
     }
     
-    printf(" %d bytes received from socket \n",nbytes_rcv);
+    //printf(" %d bytes received from socket \n",nbytes_rcv);
     
     
-        printf("           MAC Address = ");
+  // printf("Destination MAC Address = ");
     ptr = eth_buf;
-    i = 6;
-        //int j=0;
-        do {
-            
-            printf("%.2x%s", *ptr++ & 0xff, (i == 1) ? " " : ":");
-            
-        } while (--i > 0);
-    
 
+    i = 6;
+  
+	for(j=0;j<6;j++){
+	  
+	   HWaddr->sll_addr[j] = eth_buf[j] & 0xff;
+	 }
+         
+   /*  do {
+        
+        printf("%.2x%s", *ptr++ & 0xff, (i == 1) ? " " : ":");
+        
+    } while (--i > 0); */
+    
+	printf("\n");
     
     return 0;
     
 }
 
-int echo_request(struct hwaddr *HWaddr)
-{
 
-	/* int     len;
-    struct icmp *icmp;
+ uint16_t in_cksum (uint16_t * addr, int len)
+ {
+     int     nleft = len;
+     uint32_t sum = 0;
+     uint16_t *w = addr;
+     uint16_t answer = 0;
 
-    icmp = (struct icmp *) sendbuf;
-    icmp->icmp_type = ICMP_ECHO;
-    icmp->icmp_code = 0;
-    icmp->icmp_id = pid;
-    icmp->icmp-seq = nsent++;
-    memset (icmp->icmp_data, 0xa5, datalen); /* fill with pattern */
-    //Gettimeofday ((struct timeval *) icmp->icmp_data, NULL);
+     while (nleft > 1) {
+         sum += *w++;
+         nleft -= 2;
+     }
+       
+     if (nleft == 1) {
+         * (unsigned char *) (&answer) = * (unsigned char *) w;
+         sum += answer;
+     }
 
-    //len = 8 + datalen;           /* checksum ICMP header and data */
-    //icmp->icmp_cksum = 0;
-    //icmp->icmp_cksum = in_cksum ((u_short *) icmp, len);
+         /* add back carry outs from top 16 bits to low 16 bits */
+     sum = (sum >> 16) + (sum & 0xffff); /* add hi 16 to low 16 */
+     sum += (sum >> 16);     /* add carry */
+     answer = ~sum;     /* truncate to 16 bits */
+     return (answer);
+ }
+ 
+ 
+ void echo_request()
+ {
 
-    //Sendto (sockfd, sendbuf, len, 0, pr->sasend, pr->salen); */
+	char src_mac[6],dst_mac[6];
+	struct sockaddr_ll addr;
+	char dst_ip[INET_ADDRSTRLEN], src_ip[INET_ADDRSTRLEN],ethernet_type[MAXLINE];
+	void* buffer = (void*)malloc(ETH_PACKET_LEN);
+	unsigned char* etherhead = buffer ;
+	int i,send_result;
+	struct ip *send_iphdr=(struct ip*) buffer+14;
+	struct icmp *send_icmphdr =(struct icmp*) buffer+34;
+	struct ethhdr *eh = (struct ethhdr *)etherhead;
+	int     icmplen;
+	int     nsent;               
+	struct hostent *he;
+	struct hwa_info	*hwa, *hwahead;
+    struct sockaddr	*sa;
+    char   *ptr;
+    int    prflag,status;
+    
+	
+	
+	for (hwahead = hwa = Get_hw_addrs(); hwa != NULL; hwa = hwa->hwa_next)
+    {
+        if (strncmp(hwa->if_name, "eth0",4) == 0)
+        {
+            
+            if ((sa = hwa->ip_addr) != NULL)
+            {
+           
+               
+                memcpy(src_mac,hwa->if_haddr,6);
+            }
+            
+            prflag = 0;
+            i = 0;
+            do {
+                if (hwa->if_haddr[i] != '\0') {
+                    prflag = 1;
+                    break;
+                }
+            } while (++i < IF_HADDR);
+            
+           /*  if (prflag) {
+                printf("Source MAC Address = ");
+                ptr = hwa->if_haddr;
+                i = IF_HADDR;
+                do {
+                    
+                    printf("%.2x%s", *ptr++ & 0xff, (i == 1) ? " " : ":");
+                    
+                } while (--i > 0);
+            } */
+			printf("\n");
+        }
+        
+    }
+    //free_hwa_info(hwahead);
+	
+	
+	// Set destination MAC address: you need to fill these out
+	dst_mac[0] = HWaddr.sll_addr[0];
+	dst_mac[1] = HWaddr.sll_addr[1];
+	dst_mac[2] = HWaddr.sll_addr[2]; 
+	dst_mac[3] = HWaddr.sll_addr[3];
+	dst_mac[4] = HWaddr.sll_addr[4];
+	dst_mac[5] = HWaddr.sll_addr[5];
+	dst_mac[6] = 0x00;
+	dst_mac[7] = 0x00;
 
-}
+	he = gethostbyname(currentnode);
+	if (he == NULL) { 
+		herror("gethostbyname");
+		exit(1);
+	}
+	bzero(src_ip,sizeof(src_ip));
+	inet_ntop(he->h_addrtype,he->h_addr_list[0],src_ip,INET_ADDRSTRLEN);
+	//printf("\n%s source ip\n",src_ip);
+	
+	
+	he = gethostbyname(previousnode);
+	if (he == NULL) { 
+		herror("gethostbyname");
+		exit(1);
+	}
+	bzero(dst_ip,sizeof(dst_ip));
+	inet_ntop(he->h_addrtype,he->h_addr_list[0],dst_ip,INET_ADDRSTRLEN);
+	//printf("\n%s destination ip \n",dst_ip);
+
+	//ip header
+	send_iphdr->ip_hl = 5;
+	send_iphdr->ip_v = 4;
+	send_iphdr->ip_tos = 0;
+	send_iphdr->ip_len = htons(ETH_PAYLOAD_LEN);   // Total length of datagram (16 bits): IP header + ICMP header + ICMP data
+	send_iphdr->ip_id = htons(0); // ID sequence number (16 bits): unused, since single datagram
+	send_iphdr->ip_ttl = 255;
+	send_iphdr->ip_off =0; 
+	send_iphdr->ip_p = IPPROTO_ICMP;
+	
+	
+	 // Source IPv4 address (32 bits)
+  if ((status = inet_pton (AF_INET, src_ip, &(send_iphdr->ip_src))) != 1) {
+    fprintf (stderr, "inet_pton() failed.\nError message: %s", strerror (status));
+    exit (EXIT_FAILURE);
+  }
+
+  // Destination IPv4 address (32 bits)
+  if ((status = inet_pton (AF_INET, dst_ip, &(send_iphdr->ip_dst))) != 1) {
+    fprintf (stderr, "inet_pton() failed.\nError message: %s", strerror (status));
+    exit (EXIT_FAILURE);
+  }
+
+	
+    send_iphdr->ip_sum = 0;
+    send_iphdr->ip_sum = in_cksum((uint16_t *) send_iphdr, 20);
+
+	pid = getpid() & 0xffff; 
+	
+	//icmp header
+	send_icmphdr->icmp_type = ICMP_ECHO;
+	send_icmphdr->icmp_code = 0;
+	send_icmphdr->icmp_id = pid;
+	send_icmphdr->icmp_seq = nsent++;
+    memset (send_icmphdr->icmp_data, 0xa5, DATALEN); /* fill with pattern */
+    Gettimeofday ((struct timeval *) send_icmphdr->icmp_data, NULL);
+
+    icmplen = 8 + DATALEN;           /* checksum ICMP header and data */
+    send_icmphdr->icmp_cksum = 0;
+    send_icmphdr->icmp_cksum = in_cksum ((u_short *)send_icmphdr, icmplen);
+	
+	
+	//Fill out ethernet frame header.
+    addr.sll_family   = PF_PACKET;
+    addr.sll_protocol = htons(ETH_P_IP);
+    addr.sll_ifindex  = 2;
+    addr.sll_pkttype  = PACKET_OTHERHOST;
+    addr.sll_halen    = ETH_ALEN;
+    
+	memcpy (addr.sll_addr, dst_mac, 6);
+    addr.sll_addr[6]  = 0x00;/*not used*/
+    addr.sll_addr[7]  = 0x00;/*not used*/
+	
+	
+	//Ethernet Buffer = Ethernet Header(src mac + dest mac + ethernet type) + Payload(IP header + ICMP header + ICMP data)
+	
+	
+	memcpy ((void *)buffer, (void *)dst_mac, 6);
+	memcpy ((void *)(buffer + 6), (void *)src_mac, 6);
+	eh->h_proto = htons(ETH_P_IP);
+	
+
+	// IPv4 header
+	memcpy ((void *)(buffer + 14), (void *)send_iphdr, sizeof(struct ip));
+	
+	// ICMP header
+	memcpy ((void *)(buffer + 14 + 20), (void *)send_icmphdr, icmplen);
+	
+	send_result = sendto(pf_socket, buffer, ETH_PACKET_LEN, 0,
+                                 (struct sockaddr*)&addr, sizeof(addr));
+								 
+	
+    if (send_result == -1) 
+	{
+        printf("Sending error : %d",errno);
+        exit(1);
+                
+    }
+
+	//printf("Ethernet Packet sent \n");
+	
+ }
+
+ void tv_sub (struct timeval *out, struct timeval *in)
+ {
+     if ((out->tv_usec -= in->tv_usec) < 0) {     /* out -= in */
+         --out->tv_sec;
+         out->tv_usec += 1000000;
+     }
+     out->tv_sec -= in->tv_sec;
+ }
+
+ 
+ void sig_alrm (int signo)
+ {
+    
+     echo_request();
+     alarm(1);
+     //return;
+ }
+ 
+ void proc(char *ptr, ssize_t len, struct timeval *tvrecv)
+ {
+     int     hlenl, icmplen;
+     double  rtt;
+     struct ip *ip;
+     struct icmp *icmp;
+     struct timeval *tvsend;
+	 
+	struct hostent *he;
+	char paddr[INET_ADDRSTRLEN];
+
+	 //printf("previous node :%s \n",previousnode);
+     ip = (struct ip *) ptr;      /* start of IP header */
+     hlenl = ip->ip_hl << 2;      /* length of IP header */
+     if (ip->ip_p != IPPROTO_ICMP)
+         return;                  /* not ICMP */
+
+     icmp = (struct icmp *) (ptr + hlenl);   /* start of ICMP header */
+     if ( (icmplen = len - hlenl) < 8)
+         return;                  /* malformed packet */
+
+     if (icmp->icmp_type == ICMP_ECHOREPLY) {
+         if (icmp->icmp_id != pid)
+             return;                /* not a response to our ECHO_REQUEST */
+         if (icmplen < 16)
+             return;                /* not enough data to use */
+
+         tvsend = (struct  timeval  *) icmp->icmp_data;
+         tv_sub (tvrecv, tvsend);
+         rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;
+		 
+		he = gethostbyname(previousnode);
+		if (he == NULL) { 
+		herror("gethostbyname");
+		exit(1);
+		}
+		bzero(paddr,sizeof(paddr));
+
+        printf ("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n",
+                 icmplen,inet_ntop(he->h_addrtype,he->h_addr_list[0],paddr,INET_ADDRSTRLEN),
+                 icmp->icmp_seq, ip->ip_ttl, rtt);
+		//printf("*********************************************************\n\n");
+		
+		
+		
+
+     } 
+ }
+
+
 
 
 int main(int argc, char const *argv[])
@@ -264,10 +531,9 @@ int main(int argc, char const *argv[])
 	int i,len;
 	const int on = 1;
 	char packet[MAXLINE];
-	char dest[MAXLINE],currentnode[MAXLINE];
+	char dest[MAXLINE];
 	int maxfdp,nready,fdp,rt_data;
     fd_set rset;
-	char rtbuffer[MAXLINE],tempip[MAXLINE];
     struct sockaddr_in rtaddr;
 	char    time_buff[MAXLINE];
     time_t ticks;
@@ -275,19 +541,27 @@ int main(int argc, char const *argv[])
 	int count = 0;
 	int recvlen,ptr;
 	char* packet1;
-    char* next_ptr;
-    char str[INET_ADDRSTRLEN],nextip[INET_ADDRSTRLEN],previousip[INET_ADDRSTRLEN];
-    struct hostent *he1;
-    struct in_addr nexthopaddr;
-    struct sockaddr_in previoushopaddr;
-    struct hwaddr HWaddr;
+	char pgbuff[MAXLINE];
+    struct sockaddr_in pgaddr;
+	struct timeval tval;
+	int recvbytes;
+	char* next_ptr;
+	char str[INET_ADDRSTRLEN],nextip[INET_ADDRSTRLEN],previousip[INET_ADDRSTRLEN];
+	struct hostent *he1;
+	struct sockaddr_in nexthopaddr,previoushopaddr;
+	socklen_t socklen = sizeof(struct sockaddr_in);
+	char multicast[16];
+	char temp[MAXLINE];
+	struct sockaddr_in sasend, sarecv;
+	socklen_t salen;
+	int pingcount;
+	
 	
 	if(argc < 1)
     {
         printf("error");
     }
-	
-	
+
 	//creating 4 sockets two IP raw socket, PF_Packet, UDP socket 
 	
 	//ping socket for receiving ICMP echo reply messages
@@ -343,12 +617,14 @@ int main(int argc, char const *argv[])
 		 printf("error while set socket \n");
 	}
 	
-
+	Signal(SIGALRM, sig_alrm);
 	
-	if(argc >= 2 && argc <= 21)
-	{   //limiting number of nodes entered by user to be 20
+	if(argc >= 2)
+	{   
+	
 			gethostname(sourcevm, sizeof sourcevm);
 			printf("Source vm : %s \n",sourcevm);
+			
 			//Checking for first node, which cannot be source node
 			if(strcmp(argv[1],sourcevm) == 0){
 				printf("Cannot Start with Source vm. Enter different node \n");
@@ -367,16 +643,10 @@ int main(int argc, char const *argv[])
 			
 			//creating packet i.e data and header
 			packet1 = make_packet(argc,argv);
+
 			
-			
-			
-			//sending packet on rt socket
+			//sending packet on rt socket for first time
 			send_packet(sourcevm,dest,packet1);
-	}
-	else if(argc > 21)
-	{
-			printf("more than 20 nodes entered. Please enter less then 20 nodes \n");
-			exit(1);
 	}
 	
 	while(1)
@@ -387,17 +657,15 @@ int main(int argc, char const *argv[])
 		FD_SET(udprecv_socket, &rset);
         fdp = max(rt,pg) ;
 		maxfdp = max(fdp,udprecv_socket);
-        nready = select(maxfdp, &rset, NULL, NULL, NULL);
         if ((nready = select(maxfdp+1, &rset, NULL, NULL, NULL)) < 0)
         {
-            printf(" Select error: %d\n", errno);
             continue;
         }
-		
+
 		//if packet is received on route traversal socket
 		if (FD_ISSET(rt, &rset))
         {
-		
+			//pingcount = 0;
 			memset(rtbuffer, 0, sizeof(MAXLINE));
             socklen_t sock_len = sizeof(struct sockaddr);
             rt_data = Recvfrom(rt, rtbuffer , MAXLINE, 0, (struct sockaddr *)&rtaddr, &sock_len);
@@ -409,27 +677,32 @@ int main(int argc, char const *argv[])
 			
 			struct iphdr *rt_recv_hdr = (struct iphdr*)rtbuffer;
 			char* rt_recv_payload = rtbuffer + sizeof(struct iphdr);
+		
 			recvlen = rt_recv_payload[0];
 			ptr = rt_recv_payload[1];
 			
+			//previous node
+			he = gethostbyaddr(&(rt_recv_hdr->saddr),sizeof(rt_recv_hdr->saddr),AF_INET);
+			strcpy(previousnode,he->h_name);
+			inet_ntop(AF_INET,he->h_addr_list[0],previousip,INET_ADDRSTRLEN);
+			//printf("Previous node IP %s \n",inet_ntop(AF_INET,he->h_addr_list[0],previousip,INET_ADDRSTRLEN));
+			inet_pton(AF_INET,previousip, &previoushopaddr.sin_addr);
+			
+			//current node
+			gethostname(currentnode, sizeof currentnode);
+			
+			//checking for identification
 			if(ntohs(rt_recv_hdr->id) == IDENTIFICATION)
 			{
 			
 					
-                
-					socklen_t socklen = sizeof(struct sockaddr_in);
-					he = gethostbyaddr(&(rt_recv_hdr->saddr),sizeof(rt_recv_hdr->saddr),AF_INET);
-					//printf("Source Host name: %s\n", he->h_name);
-					
 					printf("*********************************************************\n\n");
-					printf("Received Valid Packet from source %s \n\n",he->h_name);
-
-					gethostname(currentnode, sizeof currentnode);
+					printf("Received Valid Packet from source %s \n\n",previousnode);
 
 					ticks = time(NULL);
 					snprintf(time_buff, sizeof(time_buff), "%.24s\r\n", ctime(&ticks));
 
-					printf("<%s> received source routing packet from %s\n",time_buff,he->h_name);
+					printf("<%s> received source routing packet from %s\n",time_buff,previousnode);
 				
 					count++;
 					
@@ -437,13 +710,6 @@ int main(int argc, char const *argv[])
 					{
 						printf("%s node is visited for the first time \n\n",currentnode);
 						 
-						char multicast[16];
-						char temp[MAXLINE];
-						struct sockaddr_in sasend, sarecv;
-						socklen_t salen;
-						
-					
-						
 						memcpy(&multicast,&rt_recv_payload[recvlen-6],4);
 
 						inet_ntop(AF_INET,multicast,temp,INET_ADDRSTRLEN);
@@ -466,67 +732,85 @@ int main(int argc, char const *argv[])
 						printf("%s node is visited for the %d time \n\n",currentnode,count);
 					}
 					
-						//sending packet to next node
+					//last node
+					if(rt_recv_payload[1] == (recvlen-6))
+					{
+						
+						printf("Last Node \n\n");
+						printf("*********************************************************\n\n");
+						
+						//ping
+						printf("*********************************************************\n\n");
+						areq((struct sockaddr *)&previoushopaddr,socklen,&HWaddr);
+						printf("PING %s (%s): %d data bytes\n\n", previousip, previousip, DATALEN);
+						
+						sig_alrm (SIGALRM); 
 						
 						
-						//last node
-						if(rt_recv_payload[1] == (recvlen-6)){
-							
-							printf("Last Node \n\n");
-							printf("*********************************************************\n\n");
-							
-							
-							printf("Previous node IP %s \n",inet_ntop(AF_INET,he->h_addr_list[0],previousip,INET_ADDRSTRLEN));
-							inet_pton(AF_INET,previousip, &(previoushopaddr.sin_addr));
-							printf("Previous node IP temp %s \n",inet_ntop(AF_INET,&(previoushopaddr.sin_addr),tempip,INET_ADDRSTRLEN));
 						
-
+						//sendmulticastmsg();
 						
-							areq((struct sockaddr *)&previoushopaddr,socklen,&HWaddr);
-							
-							
-							printf("PING %s (%s): %d data bytes\n", previousip, previousip, datalen);
-                            exit(1);
-							//echo_request(&HWaddr);
+						//printf("Send Multicast message to all nodes \n");
+						//continue;
 						
-						}
-						
+					
+					}
+					
+					else
+					
+					{
+					
+						//next node
 						next_ptr = rt_recv_payload + rt_recv_payload[1];
-
 						memcpy(str,next_ptr,4);
 						
-						printf("Next node IP %s \n",inet_ntop(AF_INET,str,nextip,INET_ADDRSTRLEN));
+						inet_ntop(AF_INET,str,nextip,INET_ADDRSTRLEN);
+						//printf("Next node IP %s \n",inet_ntop(AF_INET,str,nextip,INET_ADDRSTRLEN));
+						inet_pton(AF_INET,nextip, &nexthopaddr.sin_addr);
+						he1 = gethostbyaddr(&nexthopaddr.sin_addr, sizeof nexthopaddr, AF_INET);
+						strcpy(nextnode,he1->h_name);
+						//printf("nextnode %s\n",nextnode);
+						printf("\n Sending Route Traversal Packet\n");
 						
-						
-						inet_pton(AF_INET,nextip, &nexthopaddr);
-						he1 = gethostbyaddr(&nexthopaddr, sizeof nexthopaddr, AF_INET);
-
-						send_packet(currentnode,he1->h_name,rtbuffer);
-						
-						//calling areq routine to get hardware address of previous node
-						
-						
-						
-						printf("Previous node IP %s \n",inet_ntop(AF_INET,he->h_addr_list[0],previousip,INET_ADDRSTRLEN));
-						inet_pton(AF_INET,previousip, &(previoushopaddr.sin_addr));
-						printf("Previous node IP temp %s \n",inet_ntop(AF_INET,&(previoushopaddr.sin_addr),tempip,INET_ADDRSTRLEN));
+						send_packet(currentnode,nextnode,rtbuffer);
+				
+						//ping
+						printf("*********************************************************\n\n");
 						areq((struct sockaddr *)&previoushopaddr,socklen,&HWaddr);
+						printf("PING %s (%s): %d data bytes\n\n", previousip, previousip, DATALEN);
+						sig_alrm (SIGALRM); 
 						
-						printf("PING %s (%s): %d data bytes\n", previousip, previousip, datalen);
-                exit(1);
 						
-						//echo_request(&HWaddr);
+						
+					}
+					
+					
 			}
 			else
 			{
 					printf("Received Invalid Packet.Ignoring Packet \n");
 			}
+            
 		}
 		
 		//if packet is received on ping socket
-		/* if (FD_ISSET(pg, &rset))
+		else if (FD_ISSET(pg, &rset))
         {
-		} */
+			//pingcount++;
+			memset(pgbuff, 0, sizeof(pgbuff));
+			memset (&pgaddr, 0, sizeof (pgaddr));
+			socklen_t pglen = sizeof(pgaddr);
+			recvbytes = recvfrom(pg, pgbuff, IP_MAXPACKET, 0, (struct sockaddr*)&pgaddr, &pglen);
+			Gettimeofday (&tval, NULL);
+			proc(pgbuff, recvbytes,&tval);
+			
+			//if(pingcount == 1){
+			//printf(" Ping reply Received\n");
+			//forwarding packet
+			
+
+			//}
+		} 
 		
 		//if packet is received on unix domain socket
 		/* if (FD_ISSET(udprecv_socket, &rset))
