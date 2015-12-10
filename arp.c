@@ -49,6 +49,7 @@ int pf_packet;
 int unixdomain_socket;
 int acceptfd;
 int cachecount;
+int domain_packetcount;
 
 // Define a struct for ARP header
 typedef struct _arp_hdr arp_hdr;
@@ -362,7 +363,7 @@ int check_unixpacket(struct sockaddr_un recvip,char resolve_ip[INET_ADDRSTRLEN],
         
     }
     
-    else if (check_cache(resolve_ip)==-1)
+    else if (index==-1)
     {
         printf("\n Cache Entry not found. Updating incomplete entry in the cache \n");
         
@@ -376,7 +377,8 @@ int check_unixpacket(struct sockaddr_un recvip,char resolve_ip[INET_ADDRSTRLEN],
         arpcache[cachecount].valid=INCOMPLETE;
         print_cache(cachecount);
         
-        printf("\n Source Ip Address in check_unixpacket() is %s \n",src_ip);
+        printf("\n Broadcasting To resolve IP address %s \n",src_ip);
+        domain_packetcount=1;
         find_mac_address(resolve_ip,src_ip);
         return 0;
     }
@@ -554,9 +556,9 @@ int send_arp_unix()
     printf("\n Updating Cache of destination at source module \n");
     arpcache[cachecount].sll_ifindex=1;
     arpcache[cachecount].sll_hatype=1;
-    strcpy(arpcache[cachecount].IP,parphdr_rcv->target_ip);
+    strcpy(arpcache[cachecount].IP,parphdr_rcv->sender_ip);
     arpcache[cachecount].valid=COMPLETE;
-    memcpy(arpcache[cachecount].sll_addr,parphdr_rcv->target_mac,6);
+    memcpy(arpcache[cachecount].sll_addr,parphdr_rcv->sender_mac,6);
     print_cache(cachecount);
 
     cachecount++;
@@ -611,6 +613,7 @@ int main(int argc, char *argv[])
     struct hostent *he;
     char odrvm[5];
     char **ip;
+    domain_packetcount=0;
     //void* rcvbuffer = (void*)malloc(ETH_FRAME_LENGTH);
     //creating pf_packet socket - packet interface on device level.
     pf_packet = Socket(PF_PACKET, SOCK_RAW, htons(PROTOCOL));
@@ -663,7 +666,23 @@ int main(int argc, char *argv[])
         
         //if request is received on unix domain socket
         if (FD_ISSET(unixdomain_socket, &rset))
-        {   acceptfd=0;
+        {
+            if(domain_packetcount==1)
+            {
+                printf("\n Tour Module areq() closed the connection socket. Removing partial entry fromm cache table. \n");
+                arpcache[cachecount].sll_ifindex=0;
+                arpcache[cachecount].connfd=0;
+                arpcache[cachecount].sll_hatype=0;
+                bzero(&arpcache[cachecount].IP,INET_ADDRSTRLEN);
+                arpcache[cachecount].valid=0;
+                printf(" \n Cache entry emptied");
+                print_cache(cachecount);
+                domain_packetcount=0;
+                cachecount=0;
+                continue;
+            }
+            
+            acceptfd=0;
             acceptfd = Accept(unixdomain_socket,(struct sockaddr *)&recvip, &rcvlen);
             printf("Packet received on  UNIX_SOCKET \n");
             if(nbytes = Read(acceptfd, resolve_ip, INET_ADDRSTRLEN)<=0)
