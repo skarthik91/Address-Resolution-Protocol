@@ -1,10 +1,3 @@
-//
-//  arp.c
-//
-//
-//  Created by Karthikeyan Swaminathan on 11/29/15.
-//
-//
 
 
 #include "unp.h"
@@ -102,7 +95,7 @@ void ntop_mac(char mac_address[6]) //Function to print MAC_ADDRESSES
 
 int printEthArpFrame(struct Ethernet_hdr* printEthHdr ,arp_hdr* printARPhdr )
 {
-    printf("\n Ethernet Frame-----------------\n");
+    printf("Ethernet Frame-----------------\n");
     
     
     printf("\n Source MAC Address : ");
@@ -703,7 +696,7 @@ int main(int argc, char *argv[])
     //check on which socket request is coming through select
     while(1)
     {
-        printf("\n Waiting in While 1");
+        //printf("\n Waiting in While 1");
         FD_ZERO(&rset);
         FD_SET(pf_packet, &rset);
         FD_SET(unixdomain_socket, &rset);
@@ -789,7 +782,7 @@ int main(int argc, char *argv[])
             }
             
             printf("Packet received on  PF_SOCKET of length %d bytes \n",length);
-            printf("\n The opcode is %d \n",ntohs(parphdr_rcv->opcode));
+            //printf("\n The opcode is %d \n",ntohs(parphdr_rcv->opcode));
             if(ntohs(parphdr_rcv->opcode) == ARPOP_REQUEST)
             {
                 printf("\n Processing ARP request \n");
