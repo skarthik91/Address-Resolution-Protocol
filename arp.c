@@ -90,15 +90,59 @@ void ntop_mac(char mac_address[6]) //Function to print MAC_ADDRESSES
     char* ptr;
     int i;
     ptr=mac_address;
-    printf("\n MAC ADDRESS :              ");
+    
     for(i=0;i<6;i++)
     {
         printf("%.2x%s", *ptr++ & 0xff, (i == 5) ? " " : ":");
         
     }
-
+    
     printf("\n");
 }
+
+int printEthArpFrame(struct Ethernet_hdr* printEthHdr ,arp_hdr* printARPhdr )
+{
+    printf("\n Ethernet Frame-----------------\n");
+    
+    
+    printf("\n Source MAC Address : ");
+    ntop_mac(printEthHdr->sourceMAC);
+
+    printf("\n Destination MAC Address : ");
+    ntop_mac(printEthHdr->destMAC);
+    
+    printf("\n Protocol=  %d \n",ntohs(printEthHdr->frame_type));
+    
+    printf("ARP Message--------- \n");
+    if(ntohs(printARPhdr->opcode)==ARPOP_REPLY)
+       {
+       printf("\n ARP REPLY \n");
+       }
+    else
+       {printf("\n ARP REQUEST \n");}
+    printf("\n Source Ip %s \n",printARPhdr->sender_ip);
+    printf("\n Sender MAC Address = ");
+    ntop_mac(printARPhdr->sender_mac);
+
+    printf("\n Destination Ip %s \n",printARPhdr->target_ip);
+    printf("\n Target MAC Address = ");
+    ntop_mac(printARPhdr->target_mac);
+    printf("\n Identification \n : %d",ntohs(printARPhdr->target_mac));
+   
+       
+    printf("\n");
+    
+
+    
+    
+    return 0;
+}
+
+
+
+
+
+
 
 void print_cache(int cache_index)
 {   printf("\n Cache Table -------------------------------------------\n");
@@ -106,7 +150,7 @@ void print_cache(int cache_index)
     printf("\n HA Type : %d\n",arpcache[cache_index].sll_hatype);
     printf("\n IP Address: %s\n",arpcache[cache_index].IP);
     if(arpcache[cache_index].valid==COMPLETE)
-    {
+    {    printf("\n MAC ADDRESS :              ");
         ntop_mac(arpcache[cache_index].sll_addr);
     }
     printf("\n---------------------------------------------------------\n");
@@ -308,7 +352,8 @@ int find_mac_address(char resolve_ip[INET_ADDRSTRLEN],char src_ip[INET_ADDRSTRLE
             
         }
         
-        printf("\n Packet Sent \n");
+        printf("\n Broadcast message sent to find MAC addess \n");
+            printEthArpFrame(pethframehdr_send,parphdr_send);
         
         
         }
@@ -489,7 +534,8 @@ int send_arp_reply()
                 
             }
             
-            printf("\n ARP reply Packet Sent \n");
+            printf("\n ARP reply Packet Sent to source module ARP \n");
+            printEthArpFrame(pethframehdr_send,parphdr_send);
             
             
             
@@ -505,7 +551,8 @@ int process_arp_request()
  
     if(strcmp(ip_canonical,parphdr_rcv->target_ip)==0)
     {
-        printf("\n Current VM is the target vm and the IP to be resolved is %s ",parphdr_rcv->target_ip);
+        printf("\n ARP request arrived. VM is the target vm and the IP to be resolved is %s ",parphdr_rcv->target_ip);
+        printEthArpFrame(pethframehdr_rcv,parphdr_rcv);
         send_arp_reply();
         
         printf("Updating Sender Cache");
@@ -525,6 +572,7 @@ int process_arp_request()
     {
         
         printf("\n ARP Request arrived. Not the target VM \n");
+        printEthArpFrame(pethframehdr_rcv,parphdr_rcv);
         printf("\n Checking if sender address is present in cache");
         cache_index=check_cache(parphdr_rcv->sender_ip);
         if(cache_index!=-1)
@@ -564,7 +612,9 @@ int send_arp_unix()
     cachecount++;
     
     
-    printf("\n Sending resolved MAC address to the Tour Module \n");
+    printf("\n Sending resolved MAC address  for IP %s  to the Tour Module \n",parphdr_rcv->sender_ip);
+    printf("\n Resolved MAC address :  \n");
+    ntop_mac(parphdr_rcv->sender_mac);
     if(nbytes_send = write(acceptfd,parphdr_rcv->sender_mac, 6)<0)
     {
         
@@ -581,7 +631,7 @@ int process_arp_reply()
     if(strcmp(ip_canonical,parphdr_rcv->target_ip)==0)
     {
         printf("\n ARP reply received at the source ARP module ",parphdr_rcv->target_ip);
-        
+        printEthArpFrame(pethframehdr_rcv,parphdr_rcv);
         send_arp_unix();
         
         
@@ -593,6 +643,7 @@ int process_arp_reply()
         //Check for cache updation
         
         printf("\n ARP Reply arrived but not at the source ARP \n");
+        
         return 0;
     }
     
